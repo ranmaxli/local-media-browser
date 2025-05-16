@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Media Browser</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .media-container {
+            position: relative;
+            width: 100%;
+            height: 70vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #333;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            touch-action: pan-y;
+        }
+        .media-content {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .nav-button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .nav-button:hover {
+            background-color: #45a049;
+        }
+        .nav-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .file-list {
+            width: 100%;
+            background-color: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+        .file-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .file-item:hover {
+            background-color: #f9f9f9;
+        }
+        .file-item.current {
+            background-color: #e6f7ff;
+            font-weight: bold;
+        }
+        .path-navigation {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+            flex-wrap: wrap;
+        }
+        .path-segment {
+            color: #1976d2;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        .path-segment:hover {
+            text-decoration: underline;
+        }
+        .path-separator {
+            margin: 0 5px;
+            color: #999;
+        }
+        .empty-directory {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        @media (max-width: 768px) {
+            .media-container {
+                height: 50vh;
+            }
+            .nav-button {
+                padding: 8px 15px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+         <!-- 目录层级超链接跳转 -->
+        <!-- <div class="path-navigation" id="pathNavigation"></div> -->
+        
+        <div class="media-container" id="mediaContainer">
+            <!-- 媒体内容将通过JavaScript动态加载 -->
+        </div>
+        
+        <div class="nav-buttons">
+            <button class="nav-button" id="prevButton">上一个</button>
+            <button class="nav-button" id="nextButton">下一个</button>
+        </div>
+        
+        <div class="file-list" id="fileList">
+            <!-- 文件列表将通过JavaScript动态加载 -->
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取当前媒体URL
+            const mediaUrl = "{{ media_url }}" || window.location.pathname;
+            let currentContext = null;
+            
+            // 获取DOM元素
+            const mediaContainer = document.getElementById('mediaContainer');
+            const prevButton = document.getElementById('prevButton');
+            const nextButton = document.getElementById('nextButton');
+            const fileList = document.getElementById('fileList');
+            const pathNavigation = document.getElementById('pathNavigation');
+            
+            // 加载媒体内容
+            function loadMedia(url, updateHistory = true) {
+                fetch(`/media_context?path=${encodeURIComponent(url.replace('/data/', ''))}`)
+                    .then(response => response.json())
+                    .then(context => {
+                        currentContext = context;
+                        renderMedia(context);
+                        renderFileList(context);
+                        renderPathNavigation(context);
+                        
+                        if (updateHistory) {
+                            // 更新浏览器历史记录
+                            if (context.current) {
+                                window.history.pushState({context}, '', `/data/${context.directory}/${context.current}`);
+                            } else {
+                                window.history.pushState({context}, '', `/data/${context.directory}`);
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading media context:', error);
+                    });
+            }
+            
+            // 渲染媒体内容
+            function renderMedia(context) {
+                mediaContainer.innerHTML = '';
+                
+                if (context.current) {
+                    const mediaUrl = `/data/${context.directory}/${context.current}`;
+                    
+                    if (context.is_video) {
+                        const video = document.createElement('video');
+                        video.src = mediaUrl;
+                        video.controls = true;
+                        video.className = 'media-content';
+                        mediaContainer.appendChild(video);
+                    } else {
+                        const img = document.createElement('img');
+                        img.src = mediaUrl;
+                        img.className = 'media-content';
+                        img.alt = context.current;
+                        mediaContainer.appendChild(img);
+                    }
+                } else {
+                    const emptyMsg = document.createElement('div');
+                    emptyMsg.className = 'empty-directory';
+                    emptyMsg.textContent = '当前目录没有媒体文件';
+                    mediaContainer.appendChild(emptyMsg);
+                }
+            }
+            
+            // 渲染文件列表
+            function renderFileList(context) {
+                fileList.innerHTML = '';
+                
+                if (!context.has_media) {
+                    const emptyMsg = document.createElement('div');
+                    emptyMsg.className = 'empty-directory';
+                    emptyMsg.textContent = '当前目录没有媒体文件';
+                    fileList.appendChild(emptyMsg);
+                    return;
+                }
+                
+                context.files.forEach((file, index) => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = `file-item ${index === context.current_index ? 'current' : ''}`;
+                    fileItem.textContent = file;
+                    fileItem.addEventListener('click', () => {
+                        loadMedia(`/data/${context.directory}/${file}`);
+                    });
+                    fileList.appendChild(fileItem);
+                });
+            }
+            
+            // 渲染路径导航
+            function renderPathNavigation(context) {
+                pathNavigation.innerHTML = '';
+                
+                const rootLink = document.createElement('span');
+                rootLink.className = 'path-segment';
+                rootLink.textContent = 'data';
+                rootLink.addEventListener('click', () => {
+                    window.location.href = '/data';
+                });
+                pathNavigation.appendChild(rootLink);
+                
+                if (!context.directory) return;
+                
+                const segments = context.directory.split('/');
+                let currentPath = '';
+                
+                segments.forEach(segment => {
+                    if (!segment) return;
+                    
+                    currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+                    
+                    const separator = document.createElement('span');
+                    separator.className = 'path-separator';
+                    separator.textContent = '/';
+                    pathNavigation.appendChild(separator);
+                    
+                    const segmentLink = document.createElement('span');
+                    segmentLink.className = 'path-segment';
+                    segmentLink.textContent = segment;
+                    segmentLink.addEventListener('click', () => {
+                        window.location.href = `/data/${currentPath}`;
+                    });
+                    pathNavigation.appendChild(segmentLink);
+                });
+            }
+            
+            // 导航按钮事件
+            prevButton.addEventListener('click', () => {
+                if (currentContext && currentContext.prev) {
+                    loadMedia(`/data/${currentContext.directory}/${currentContext.prev}`);
+                }
+            });
+            
+            nextButton.addEventListener('click', () => {
+                if (currentContext && currentContext.next) {
+                    loadMedia(`/data/${currentContext.directory}/${currentContext.next}`);
+                }
+            });
+            
+            // 触摸滑动事件
+            let touchStartX = 0;
+            let touchEndX = 0;
+            
+            mediaContainer.addEventListener('touchstart', (e) => {
+                touchStartX = e.changedTouches[0].screenX;
+            }, false);
+            
+            mediaContainer.addEventListener('touchend', (e) => {
+                touchEndX = e.changedTouches[0].screenX;
+                handleSwipe();
+            }, false);
+            
+            function handleSwipe() {
+                if (!currentContext) return;
+                
+                if (touchEndX < touchStartX - 50 && currentContext.next) {
+                    // 向左滑动 - 下一个
+                    loadMedia(`/data/${currentContext.directory}/${currentContext.next}`);
+                } else if (touchEndX > touchStartX + 50 && currentContext.prev) {
+                    // 向右滑动 - 上一个
+                    loadMedia(`/data/${currentContext.directory}/${currentContext.prev}`);
+                }
+            }
+            
+            // 键盘导航
+            document.addEventListener('keydown', (e) => {
+                if (!currentContext) return;
+                
+                if (e.key === 'ArrowLeft' && currentContext.prev) {
+                    loadMedia(`/data/${currentContext.directory}/${currentContext.prev}`);
+                } else if (e.key === 'ArrowRight' && currentContext.next) {
+                    loadMedia(`/data/${currentContext.directory}/${currentContext.next}`);
+                }
+            });
+            
+            // 处理浏览器历史导航
+            window.addEventListener('popstate', (e) => {
+                if (e.state && e.state.context) {
+                    currentContext = e.state.context;
+                    renderMedia(currentContext);
+                    renderFileList(currentContext);
+                    renderPathNavigation(currentContext);
+                } else {
+                    loadMedia(window.location.pathname, false);
+                }
+            });
+            
+            // 初始加载
+            loadMedia(mediaUrl);
+        });
+    </script>
+</body>
+</html>
